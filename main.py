@@ -39,8 +39,16 @@ def start_greet(expectId: str, securityId: str, lid: str, encryptGeekId: str, ge
     start_response = urllib.request.urlopen(start_request)
     start_result_str = start_response.read().decode()
     start_result_json: dict = json.loads(start_result_str)
-    start_result_code = start_result_json["code"]
+    start_result_code = start_result_json.get("code")
     if start_result_code == 0:
+        zpData: dict = start_result_json.get("zpData")
+        if zpData:
+            if zpData.get('limitTitle') or zpData.get('stateDesc'):
+                logger.error(f"向候选人：【{geekName}】打招呼失败")
+                logger.error(f"【limitTitle】{zpData.get('limitTitle')}")
+                logger.error(f"【stateDesc】{zpData.get('stateDesc')}")
+                exit(zpData.get('limitTitle'))
+                return False
         logger.success(f"向候选人：【{geekName}】打招呼成功")
         return True
     else:
@@ -264,22 +272,25 @@ def query_resume():
 
 
 if __name__ == '__main__':
-    _wt2 = "DMNUqkUp0RqCcgpmtzRV7MipLqEpyO9ZY9Iq94mTSKlODg1zn9JqUqdm0BBOMsIH7fYxO7eCvbdjnzyQ1b4KH8A~~"
+    _wt2 = "DM5llbLG63r3iE9pPJqtR7o1t8Tt_MJS4ZEVxMSLSiV6OQcpONWhNs-zl8_pe8HSM9n8zZzXNnrp2Onp1lTdvcw~~"
     _cookie = f"wt2={_wt2}"
-    _encryptJobId = query_position("C/C++开发工程师")  # 要匹配的职位，精确匹配
-    _position_match = "C++"  # 要匹配的职位
+    _encryptJobId = query_position("web前端开发工程师")  # 要匹配的职位，精确匹配
+    _position_match = "前端"  # 要匹配的职位
     _page = 30  # 查询的页数，每页15条应聘者数据，网页上一次最多只给查30页的数据，不支持30页以上的参数
     _school_check = True  # 是否匹配教育经历，默认匹配
     _log_level = "INFO"  # 日志等级，默认INFO，可选DEBUG，SUCCESS，ERROR，WARNING等
     logger.remove()
     logger.add(sys.stderr, level=_log_level)
-    if _school_check:
-        _school_list = list(
-            filter(
-                lambda line: not (line == ""),
-                map(lambda line: line.rstrip("\n"), open("schoolList.txt", encoding="utf-8").readlines()),
-            )
-        )
-    else:
-        _school_list = list()
-    query_resume()
+    try:
+        if _school_check:
+                _school_list = list(
+                    filter(
+                        lambda line: not (line == ""),
+                        map(lambda line: line.rstrip("\n"), open("schoolList.txt", encoding="utf-8").readlines()),
+                    )
+                )
+        else:
+            _school_list = list()
+        query_resume()
+    except FileNotFoundError:
+        logger.error(f"没有找到schoolList.txt文件，请新建该文件并写入院校名单信息")
