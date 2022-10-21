@@ -68,8 +68,9 @@ def check_edu_list(geekEdus: list, ) -> bool:
             eduType = edu.get("eduType")  # 教育类型：1 全日制，2 非全日制，列表页没有给到具体的类型
             startDate = edu.get("startDate")
             endDate = edu.get("endDate")
-
-            if check_edu_end_date(endDate) and _school_list and _school_list.count(school):
+            if not check_edu_end_date(endDate):
+                return False
+            if _school_list and _school_list.count(school):
                 return True
     return False
 
@@ -85,6 +86,11 @@ def find_relevant_talent(geek: dict):
     geekCard: dict = geek.get("geekCard")
     geekName = geekCard.get("geekName")
     geekGender = geekCard.get("geekGender")  # 性别 1是男0是女
+    ageDesc = geekCard.get("ageDesc")  # 年龄 29岁
+    if len(ageDesc) >= 2 and int(ageDesc[:2]) > 30:
+        logger.info(f"年龄不匹配：候选人姓名：{geekName}，性别：{'男' if geekGender == 1 else '女'}，"
+                    f"年龄：{ageDesc}")
+        return False
     geekWorkYear = geekCard.get("geekWorkYear")
     geekDegree = geekCard.get("geekDegree")
     geekDesc: dict = geekCard.get("geekDesc")
@@ -94,6 +100,13 @@ def find_relevant_talent(geek: dict):
     regex_list.append(expectPositionName)
     expectLocationName = geekCard.get("expectLocationName")  # 期望城市
     activeTimeDesc = geekCard.get("activeTimeDesc")  # 活跃状态
+    # if not activeTimeDesc:
+    #     activeTime = geekCard.get("activeTime")  # 活跃时间
+    #     if time.time() - activeTime > 60 * 60 * 24 * 30 * 3:
+    #         logger.info(f"不活跃：候选人姓名：{geekName}，性别：{'男' if geekGender == 1 else '女'}，"
+    #                     f"上次活跃时间：{time.strftime('%Y年%m月%d日 %H:%M:%S', time.localtime(activeTime))}，"
+    #                     f"年龄：{ageDesc}")
+    #         return False
     geekEdu: dict = geekCard.get("geekEdu")  # 教育信息（最高）
     height_school = geekEdu.get("school")
     height_major = geekEdu.get("major")
@@ -124,11 +137,11 @@ def find_relevant_talent(geek: dict):
         logger.info(f"匹配到岗位关键字：{regex_math_list}")
         if check_edu_list(geekEdus):
             logger.success(
-                f"匹配到简历：候选人姓名：{geekName}，性别：{'男' if geekGender == 1 else '女'}，工作年限：{geekWorkYear}，"
-                f"期望岗位：{expectPositionName}，学历：{geekDegree}，学校：{height_school}，毕业时间：{graduationDate}，"
-                f"专业：{height_major}")
+                f"匹配到简历：候选人姓名：{geekName}，性别：{'男' if geekGender == 1 else '女'}，年龄：{ageDesc}，"
+                f"工作年限：{geekWorkYear}，期望岗位：{expectPositionName}，学历：{geekDegree}，学校：{height_school}，"
+                f"毕业时间：{graduationDate}，专业：{height_major}")
         else:
-            logger.info(f"未匹配到教育经历：候选人姓名：{geekName}，性别：{'男' if geekGender == 1 else '女'}，"
+            logger.info(f"未匹配到教育经历：候选人姓名：{geekName}，性别：{'男' if geekGender == 1 else '女'}，年龄：{ageDesc}，"
                         f"工作年限：{geekWorkYear}，期望岗位：{expectPositionName}，学历：{geekDegree}，"
                         f"学校：{height_school}，毕业时间：{graduationDate}，专业：{height_major}")
             return False
@@ -283,12 +296,12 @@ if __name__ == '__main__':
     logger.add(sys.stderr, level=_log_level)
     try:
         if _school_check:
-                _school_list = list(
-                    filter(
-                        lambda line: not (line == ""),
-                        map(lambda line: line.rstrip("\n"), open("schoolList.txt", encoding="utf-8").readlines()),
-                    )
+            _school_list = list(
+                filter(
+                    lambda line: not (line == ""),
+                    map(lambda line: line.rstrip("\n"), open("schoolList.txt", encoding="utf-8").readlines()),
                 )
+            )
         else:
             _school_list = list()
         query_resume()
