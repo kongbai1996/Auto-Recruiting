@@ -9,6 +9,7 @@ import sys
 import time
 import urllib.request
 from datetime import datetime
+from http.client import IncompleteRead
 from typing import List
 from urllib import parse
 from urllib.error import URLError
@@ -36,8 +37,21 @@ def start_greet(expectId: str, securityId: str, lid: str, encryptGeekId: str, ge
     start_content["securityId"] = securityId  # 必须，否则会报{"code":1092,"message":"操作失败","zpData":{}}
     start_data = parse.urlencode(start_content)
     start_request = urllib.request.Request(start_url, start_data.encode(), headers=start_headers)
-    start_response = urllib.request.urlopen(start_request)
-    start_result_str = start_response.read().decode()
+    try:
+        start_response = urllib.request.urlopen(start_request)
+        start_result_str = start_response.read().decode()
+    except URLError as e:
+        logger.error(f"向候选人打招呼，发生URLError异常，一般重试即可。")
+        logger.error(e)
+        return False
+    except OSError as e:
+        logger.error(f"向候选人打招呼，发生OSError异常")
+        logger.error(e)
+        return False
+    except Exception as e:
+        logger.error(f"向候选人打招呼，发生未知异常")
+        logger.error(e)
+        return False
     start_result_json: dict = json.loads(start_result_str)
     start_result_code = start_result_json.get("code")
     if start_result_code == 0:
@@ -94,8 +108,9 @@ def find_relevant_talent(geek: dict):
     geekWorkYear = geekCard.get("geekWorkYear")
     geekDegree = geekCard.get("geekDegree")
     geekDesc: dict = geekCard.get("geekDesc")
-    geekDesc_content = geekDesc.get("content")  # 个人优势
-    regex_list.append(geekDesc_content)
+    if geekDesc:
+        geekDesc_content = geekDesc.get("content")  # 个人优势
+        regex_list.append(geekDesc_content)
     expectPositionName = geekCard.get("expectPositionName")  # 期望岗位
     regex_list.append(expectPositionName)
     expectLocationName = geekCard.get("expectLocationName")  # 期望城市
@@ -214,7 +229,7 @@ def query_resume():
     activation = "2505"  # 活跃度：2505本月活跃
     recentNotView = "2301"  # 近期没有看过：2301近14天没有
     school = "0"  # 学校：
-    major = "0"  # 专业：0不限
+    major = "0"  # 专业：0不限 60016 计算机类
     experience = "104,105,106,103"  # 工作经验：0不限
     degree = "203,204,205"  # 学位：
     intention = "701,704,703"  # 求职意向
@@ -223,7 +238,7 @@ def query_resume():
     query_url_all = f"{query_base_url}?age={age}&gender={gender}&exchangeResumeWithColleague={exchangeResume}" \
                     f"&switchJobFrequency={switchJob}&activation={activation}&recentNotView={recentNotView}" \
                     f"&school={school}&major={major}&experience={experience}&degree={degree}&salary={salary}" \
-                    f"&intention={intention}&jobId={_encryptJobId}"
+                    f"&intention={intention}&jobId={_encryptJobId}&_={int(time.time() * 1000)}"
     sum_resume = 0
     start_greet_count = 0
     for i in range(1, 1 + _page):
@@ -232,43 +247,10 @@ def query_resume():
         try:
             response = urllib.request.urlopen(request)
             result_str: str = response.read().decode()
-            if not result_str:
-                logger.warning(f"查询第【{i}】页的结果为空")
-                break
-            response_content_type = None
-            for header_tuple in response.headers._headers:
-                if header_tuple[0] == 'Content-Type':
-                    response_content_type = header_tuple[1]
-            if response_content_type == "application/json" or response_content_type == "application/json;charset=UTF-8":
-                result_json: dict = json.loads(result_str)
-                if result_json.get("code") == 0:
-                    zp: dict = result_json.get("zpData")
-                    if zp and zp.get("geekList"):
-                        current_page_size = len(zp.get("geekList"))
-                        logger.info(f"当前第【{i}】页，本页共获取到【{current_page_size}】份简历。")
-                        if current_page_size != 15:
-                            logger.warning(f"当前第【{i}】页，本页共获取到简历数不足15份，请注意，本页获取到【{current_page_size}】份简历。")
-                        sum_resume += current_page_size
-                        for geek in zp.get("geekList"):
-                            if find_relevant_talent(geek):
-                                start_greet_count += 1
-                        if i % 2 == 0:
-                            logger.success(f"已处理【{sum_resume}】份简历，已向【{start_greet_count}】位应聘者打招呼。")
-                    else:
-                        logger.warning(f"当前第【{i}】页，本页没有获取到简历。")
-                        break
-                    if not zp.get("hasMore"):
-                        logger.warning(f"当前第【{i}】页，没有更多的简历了。")
-                        break
-                else:
-                    logger.error(f"当前第【{i}】页，错误码：{result_json.get('code')}，错误信息：{result_json.get('message')}")
-                    logger.debug(f"当前第【{i}】页，查询返回的json：{result_json}")
-                    break
-            else:
-                logger.warning(f"当前第【{i}】页，查询信息返回的结果为【{response_content_type}】类型。")
-                logger.error(f"当前第【{i}】页，可能出现人机验证，请到网页进行验证。")
-                logger.debug(f"当前第【{i}】页，查询返回结果如下：\n{result_str}")
-                break
+        except IncompleteRead as e:
+            logger.error(f"当前第【{i}】页，发生IncompleteRead异常，返回结果太大，服务器分片。")
+            page = e.partial
+            result_str = page.decode('utf-8')
         except URLError as e:
             logger.error(f"当前第【{i}】页，发生URLError异常，一般重试即可。")
             logger.error(e)
@@ -280,6 +262,43 @@ def query_resume():
         except Exception as e:
             logger.error(f"当前第【{i}】页，发生未知异常")
             logger.error(e)
+            break
+        if not result_str:
+            logger.warning(f"查询第【{i}】页的结果为空")
+            break
+        response_content_type = None
+        for header_tuple in response.headers._headers:
+            if header_tuple[0] == 'Content-Type':
+                response_content_type = header_tuple[1]
+        if response_content_type == "application/json" or response_content_type == "application/json;charset=UTF-8":
+            result_json: dict = json.loads(result_str)
+            if result_json.get("code") == 0:
+                zp: dict = result_json.get("zpData")
+                if zp and zp.get("geekList"):
+                    current_page_size = len(zp.get("geekList"))
+                    logger.info(f"当前第【{i}】页，本页共获取到【{current_page_size}】份简历。")
+                    if current_page_size != 15:
+                        logger.warning(f"当前第【{i}】页，本页共获取到简历数不足15份，请注意，本页获取到【{current_page_size}】份简历。")
+                    sum_resume += current_page_size
+                    for geek in zp.get("geekList"):
+                        if find_relevant_talent(geek):
+                            start_greet_count += 1
+                    if i % 2 == 0:
+                        logger.success(f"已处理【{sum_resume}】份简历，已向【{start_greet_count}】位应聘者打招呼。")
+                else:
+                    logger.warning(f"当前第【{i}】页，本页没有获取到简历。")
+                    break
+                if not zp.get("hasMore"):
+                    logger.warning(f"当前第【{i}】页，没有更多的简历了。")
+                    break
+            else:
+                logger.error(f"当前第【{i}】页，错误码：{result_json.get('code')}，错误信息：{result_json.get('message')}")
+                logger.debug(f"当前第【{i}】页，查询返回的json：{result_json}")
+                break
+        else:
+            logger.warning(f"当前第【{i}】页，查询信息返回的结果为【{response_content_type}】类型。")
+            logger.error(f"当前第【{i}】页，可能出现人机验证，请到网页进行验证。")
+            logger.debug(f"当前第【{i}】页，查询返回结果如下：\n{result_str}")
             break
     logger.success(f"共处理【{sum_resume}】份简历，共向【{start_greet_count}】位应聘者打招呼。")
 
